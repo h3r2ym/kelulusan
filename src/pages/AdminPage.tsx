@@ -334,8 +334,8 @@ export default function AdminPage() {
 
     // Sheet 1: student import template
     const ws1 = xlsx.utils.aoa_to_sheet([
-      ['NIM', 'Nama Lengkap', 'Tanggal Lahir (YYYY-MM-DD)', 'ID Sekolah', 'Status Lulus (1=Lulus / 0=Tidak Lulus)'],
-      ['2024001', 'Budi Santoso', '2006-01-15', schools[0]?.id ?? 'ID_SEKOLAH', 1],
+      ['NIM', 'Nama Lengkap', 'Tanggal Lahir (DD-MM-YYYY)', 'ID Sekolah', 'Status Lulus (1=Lulus / 0=Tidak Lulus)'],
+      ['2024001', 'Budi Santoso', '15-01-2006', schools[0]?.id ?? 'ID_SEKOLAH', 1],
     ])
     ws1['!cols'] = [{ wch: 15 }, { wch: 28 }, { wch: 28 }, { wch: 16 }, { wch: 38 }]
     xlsx.utils.book_append_sheet(wb, ws1, 'Data Siswa')
@@ -370,12 +370,24 @@ export default function AdminPage() {
 
       const rawRows = xlsx.utils.sheet_to_json<Record<string, unknown>>(ws)
       const rows = rawRows.map((r) => {
-        const rawDate = r['Tanggal Lahir (YYYY-MM-DD)']
+        // Fallback untuk kompabilitas dengan template lama (YYYY-MM-DD)
+        const rawDate = r['Tanggal Lahir (DD-MM-YYYY)'] ?? r['Tanggal Lahir (YYYY-MM-DD)']
         let birthDate = ''
+        
         if (rawDate instanceof Date) {
           birthDate = rawDate.toISOString().split('T')[0]
         } else {
-          birthDate = String(rawDate ?? '').trim()
+          const dmyStr = String(rawDate ?? '').trim()
+          // Mencocokkan format D-M-YYYY, DD-MM-YYYY, dengan pemisah - atau /
+          const match = dmyStr.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/)
+          if (match) {
+            const d = match[1].padStart(2, '0')
+            const m = match[2].padStart(2, '0')
+            const y = match[3]
+            birthDate = `${y}-${m}-${d}`
+          } else {
+            birthDate = dmyStr // Jika bukan format yang dikenali, biarkan lolos ke API agar ditolak validator di sana (YYYY-MM-DD)
+          }
         }
         const statusRaw = r['Status Lulus (1=Lulus / 0=Tidak Lulus)']
         return {

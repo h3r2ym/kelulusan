@@ -195,11 +195,10 @@ export default function StudentPage() {
                     value={birthDate}
                     onChange={(e) => handleBirthDateChange(e.target.value)}
                     required
-                    placeholder="dd-mm-yyyy"
+                    placeholder="Format: dd-mm-yyyy ,Contoh: 15-01-2006"
                     maxLength={10}
-                    className={`w-full border rounded-xl px-4 py-3 text-gray-900 placeholder-gray-300 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
-                      birthDateError ? 'border-red-400' : 'border-gray-200'
-                    }`}
+                    className={`w-full border rounded-xl px-4 py-3 text-gray-900 placeholder-gray-300 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent ${birthDateError ? 'border-red-400' : 'border-gray-200'
+                      }`}
                   />
                   {birthDateError && (
                     <p className="text-red-500 text-xs mt-1.5">{birthDateError}</p>
@@ -230,9 +229,8 @@ export default function StudentPage() {
                       onChange={(e) => { setCaptchaInput(e.target.value); setCaptchaError('') }}
                       required
                       placeholder="Jawab"
-                      className={`w-24 border rounded-xl px-3 py-3 text-center text-gray-900 font-semibold bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
-                        captchaError ? 'border-red-400' : 'border-gray-200'
-                      }`}
+                      className={`w-24 border rounded-xl px-3 py-3 text-center text-gray-900 font-semibold bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent ${captchaError ? 'border-red-400' : 'border-gray-200'
+                        }`}
                     />
 
                     {/* Refresh soal */}
@@ -303,8 +301,8 @@ export default function StudentPage() {
 
                 {/* Congratulatory / condolence message */}
                 <div className={`rounded-xl px-4 py-3 mb-5 text-sm leading-relaxed ${result.is_graduated
-                    ? 'bg-green-50 border border-green-100 text-green-800'
-                    : 'bg-red-50 border border-red-100 text-red-800'
+                  ? 'bg-green-50 border border-green-100 text-green-800'
+                  : 'bg-red-50 border border-red-100 text-red-800'
                   }`}>
                   {result.is_graduated
                     ? <>Selamat, Anda dinyatakan <strong>LULUS</strong> dari jenjang{' '}
