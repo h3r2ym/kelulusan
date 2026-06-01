@@ -77,88 +77,78 @@ npm run dev:server     # Hanya Express API
 
 ---
 
-## Deploy ke Vercel
+## Deploy ke Vercel (Full-stack dengan Turso)
 
-> **Penting**: Vercel adalah platform *serverless* dan **tidak mendukung SQLite** (`data.db`) secara native karena filesystem-nya bersifat read-only dan ephemeral. Untuk deploy penuh ke Vercel, database perlu dipindahkan ke layanan eksternal seperti [Turso](https://turso.tech) (SQLite over HTTP) atau [PlanetScale](https://planetscale.com) / [Neon](https://neon.tech) (PostgreSQL).
->
-> Panduan ini menjelaskan cara deploy **frontend saja** ke Vercel dengan API di-host terpisah (misalnya Railway, Render, atau VPS).
+Aplikasi ini siap di-deploy ke Vercel sebagai full-stack app: frontend React + backend Express sebagai serverless function, database menggunakan [Turso](https://turso.tech) (SQLite over HTTP).
 
-### Opsi 1 — Frontend di Vercel + Backend di Railway/Render
+### Langkah 1 — Buat database di Turso
 
-#### A. Deploy Backend (Railway / Render)
+```bash
+# Install Turso CLI
+brew install tursodatabase/tap/turso   # macOS
+# atau: curl -sSfL https://get.tur.so/install.sh | bash
 
-1. Push repo ke GitHub.
-2. Buat project baru di [Railway](https://railway.app) atau [Render](https://render.com).
-3. Pilih repo, set **start command**: `node --loader tsx server/index.ts` atau build dulu dengan `tsc` lalu `node dist-server/index.js`.
-4. Set environment variables:
-   ```
-   ADMIN_PASSWORD=passwordProduction
-   PORT=3001
-   ```
-5. Catat URL backend yang diberikan (misal `https://app-kelulusan-api.up.railway.app`).
+turso auth login
+turso db create app-kelulusan
+turso db show app-kelulusan   # catat URL
+turso db tokens create app-kelulusan   # catat token
+```
 
-#### B. Deploy Frontend ke Vercel
+### Langkah 2 — Push repo ke GitHub
 
-1. Update `vite.config.ts` — ganti proxy ke URL backend production:
+```bash
+git add .
+git commit -m "ready for vercel deploy"
+git push
+```
 
-   ```ts
-   // Untuk production, proxy tidak digunakan; panggil API langsung via env var.
-   // Atau gunakan VITE_API_URL di kode untuk target dinamis.
-   ```
+### Langkah 3 — Deploy ke Vercel
 
-   Cara paling sederhana: buat file `.env.production` di root:
-
-   ```env
-   VITE_API_BASE=https://app-kelulusan-api.up.railway.app
-   ```
-
-   Lalu di semua fetch call di frontend, ganti `'/api/...'` menjadi:
-
-   ```ts
-   const API = import.meta.env.VITE_API_BASE ?? ''
-   fetch(`${API}/api/lookup`, ...)
-   ```
-
-2. Buka [vercel.com](https://vercel.com), import repo dari GitHub.
-
-3. Setting di Vercel:
-   - **Framework Preset**: `Vite`
+1. Buka [vercel.com](https://vercel.com) → **Add New Project** → import repo.
+2. Vercel akan otomatis mendeteksi Vite. Biarkan setting default:
    - **Build Command**: `npm run build`
    - **Output Directory**: `dist`
-   - **Environment Variables**: tambahkan `VITE_API_BASE` dengan URL backend
-
+3. Tambahkan **Environment Variables**:
+   | Variable | Value |
+   |----------|-------|
+   | `ADMIN_PASSWORD` | password admin production |
+   | `TURSO_DATABASE_URL` | `libsql://nama-db-anda.turso.io` |
+   | `TURSO_AUTH_TOKEN` | token dari langkah 1 |
 4. Klik **Deploy**.
 
-### Opsi 2 — Full-stack di Vercel (dengan Turso sebagai database)
+### Cara kerja di Vercel
 
-Jika ingin semua di Vercel:
+- `vercel.json` me-rewrite semua request `/api/*` ke serverless function `api/index.ts`.
+- Request selain `/api/*` (termasuk `/admin`) di-serve sebagai SPA (`index.html`), sehingga React Router menangani routing — **tidak ada lagi 404 saat akses `/admin` langsung**.
+- `api/index.ts` meng-inisialisasi koneksi Turso lalu meneruskan request ke Express app.
 
-1. Ganti `better-sqlite3` dengan [`@libsql/client`](https://docs.turso.tech/sdk/ts/quickstart) (Turso).
-2. Buat database di [Turso](https://turso.tech), ambil `TURSO_DATABASE_URL` dan `TURSO_AUTH_TOKEN`.
-3. Buat file `api/[...route].ts` (Vercel serverless function) yang meng-handle semua request Express.
-4. Update `vercel.json`:
-   ```json
-   {
-     "rewrites": [{ "source": "/api/(.*)", "destination": "/api/index" }]
-   }
-   ```
-5. Set semua env vars di Vercel dashboard.
+### Opsi alternatif — Frontend di Vercel + Backend di Railway/Render
+
+Jika tidak ingin menggunakan Turso, deploy backend ke [Railway](https://railway.app) atau [Render](https://render.com):
+
+1. Set env vars di Railway: `ADMIN_PASSWORD`, `PORT=3001`.
+2. Di `vite.config.ts`, tidak perlu perubahan untuk development.
+3. Buat `.env.production` di root dengan `VITE_API_BASE=https://url-backend-kamu.railway.app` dan ubah semua fetch di frontend dari `'/api/...'` ke `` `${import.meta.env.VITE_API_BASE ?? ''}/api/...` ``.
+4. Deploy frontend ke Vercel (tanpa `TURSO_*` env vars).
 
 ---
 
 ## Struktur Project
 
 ```
+api/
+  index.ts      # Vercel serverless entry point
 server/
   index.ts      # Express REST API
-  database.ts   # SQLite init + schema migration
+  database.ts   # libsql/Turso init + schema migration
 src/
   App.tsx       # Router setup
   pages/
     StudentPage.tsx   # Halaman publik cek kelulusan
     AdminPage.tsx     # Panel admin
   index.css     # Tailwind + design tokens
-data.db          # SQLite (auto-generated, jangan di-commit)
+vercel.json      # Routing config (SPA + API)
+data.db          # SQLite lokal (auto-generated, jangan di-commit)
 .env             # Secrets (jangan di-commit)
 ```
 
