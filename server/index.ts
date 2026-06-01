@@ -37,7 +37,7 @@ app.post('/api/lookup', (req, res): void => {
   }
   const student = db
     .prepare(
-      `SELECT s.*, sch.name AS school_name, sch.year AS school_year
+      `SELECT s.*, sch.name AS school_name, sch.year AS school_year, sch.level AS school_level
        FROM students s
        JOIN schools sch ON s.school_id = sch.id
        WHERE s.nim = ? AND s.birth_date = ?`,
@@ -81,22 +81,46 @@ app.get('/api/admin/students', requireAdmin, (req, res) => {
 
 // ── Admin: add school ────────────────────────────────────────────────────────
 app.post('/api/admin/schools', requireAdmin, (req, res): void => {
-  const { id, name, year } = req.body as { id: string; name: string; year: number }
-  if (!id?.trim() || !name?.trim() || !year) {
-    res.status(400).json({ error: 'ID, nama, dan tahun wajib diisi' })
+  const { id, name, year, level } = req.body as { id: string; name: string; year: number; level: string }
+  if (!id?.trim() || !name?.trim() || !year || !level) {
+    res.status(400).json({ error: 'ID, nama, tahun, dan jenjang wajib diisi' })
+    return
+  }
+  const validLevels = ['TK', 'SD', 'SMP', 'SMA/SMK']
+  if (!validLevels.includes(level)) {
+    res.status(400).json({ error: 'Jenjang tidak valid' })
     return
   }
   try {
-    db.prepare('INSERT INTO schools (id, name, year) VALUES (?, ?, ?)').run(
+    db.prepare('INSERT INTO schools (id, name, year, level) VALUES (?, ?, ?, ?)').run(
       id.trim().toUpperCase(),
       name.trim(),
       year,
+      level,
     )
     res.json({ success: true })
   } catch (e: unknown) {
     const msg = (e as Error).message
     res.status(400).json({ error: msg.includes('UNIQUE') ? 'ID sekolah sudah digunakan' : msg })
   }
+})
+
+// ── Admin: update school ────────────────────────────────────────────────────
+app.put('/api/admin/schools/:id', requireAdmin, (req, res): void => {
+  const { name, year, level } = req.body as { name: string; year: number; level: string }
+  if (!name?.trim() || !year || !level) {
+    res.status(400).json({ error: 'Nama, tahun, dan jenjang wajib diisi' })
+    return
+  }
+  const validLevels = ['TK', 'SD', 'SMP', 'SMA/SMK']
+  if (!validLevels.includes(level)) {
+    res.status(400).json({ error: 'Jenjang tidak valid' })
+    return
+  }
+  db.prepare('UPDATE schools SET name = ?, year = ?, level = ? WHERE id = ?').run(
+    name.trim(), year, level, req.params.id,
+  )
+  res.json({ success: true })
 })
 
 // ── Admin: delete school ─────────────────────────────────────────────────────
@@ -131,14 +155,33 @@ app.post('/api/admin/students', requireAdmin, (req, res): void => {
   }
 })
 
-// ── Admin: update graduation status ─────────────────────────────────────────
-app.put('/api/admin/students/:id', requireAdmin, (req, res) => {
-  const { isGraduated } = req.body as { isGraduated: boolean }
-  db.prepare('UPDATE students SET is_graduated = ? WHERE id = ?').run(
-    isGraduated ? 1 : 0,
-    req.params.id,
-  )
-  res.json({ success: true })
+// ── Admin: update student (full edit or quick graduation toggle) ─────────────
+app.put('/api/admin/students/:id', requireAdmin, (req, res): void => {
+  const { isGraduated, nim, name, birthDate, schoolId } = req.body as {
+    isGraduated: boolean; nim?: string; name?: string; birthDate?: string; schoolId?: string
+  }
+  if (nim !== undefined) {
+    // Full update
+    if (!nim?.trim() || !name?.trim() || !birthDate || !schoolId) {
+      res.status(400).json({ error: 'Semua field wajib diisi' })
+      return
+    }
+    try {
+      db.prepare(
+        'UPDATE students SET nim = ?, name = ?, birth_date = ?, school_id = ?, is_graduated = ? WHERE id = ?',
+      ).run(nim.trim(), name.trim(), birthDate, schoolId, isGraduated ? 1 : 0, req.params.id)
+      res.json({ success: true })
+    } catch (e: unknown) {
+      const msg = (e as Error).message
+      res.status(400).json({ error: msg.includes('UNIQUE') ? 'NIM sudah terdaftar di sekolah ini' : msg })
+    }
+  } else {
+    // Quick graduation toggle
+    db.prepare('UPDATE students SET is_graduated = ? WHERE id = ?').run(
+      isGraduated ? 1 : 0, req.params.id,
+    )
+    res.json({ success: true })
+  }
 })
 
 // ── Admin: delete student ────────────────────────────────────────────────────

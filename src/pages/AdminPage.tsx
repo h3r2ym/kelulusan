@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import * as xlsx from 'xlsx'
 
-interface School { id: string; name: string; year: number }
+interface School { id: string; name: string; year: number; level: string }
 interface Student {
   id: number; nim: string; name: string; birth_date: string
   school_id: string; school_name: string; is_graduated: number
@@ -98,8 +98,9 @@ export default function AdminPage() {
 
   // Schools state
   const [schools, setSchools] = useState<School[]>([])
-  const [schoolForm, setSchoolForm] = useState({ id: '', name: '', year: String(new Date().getFullYear()) })
+  const [schoolForm, setSchoolForm] = useState({ id: '', name: '', year: String(new Date().getFullYear()), level: 'SMP' })
   const [schoolLoading, setSchoolLoading] = useState(false)
+  const [editingSchool, setEditingSchool] = useState<School | null>(null)
 
   // Students state
   const [students, setStudents] = useState<Student[]>([])
@@ -109,6 +110,10 @@ export default function AdminPage() {
     nim: '', name: '', birthDate: '', schoolId: '', isGraduated: false,
   })
   const [studentLoading, setStudentLoading] = useState(false)
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null)
+  const [editStudentForm, setEditStudentForm] = useState({
+    nim: '', name: '', birthDate: '', schoolId: '', isGraduated: false,
+  })
 
   // Import state
   const [importing, setImporting] = useState(false)
@@ -182,7 +187,7 @@ export default function AdminPage() {
     setSchoolLoading(false)
     if (res.ok) {
       showToast('Sekolah berhasil ditambahkan')
-      setSchoolForm({ id: '', name: '', year: String(new Date().getFullYear()) })
+      setSchoolForm({ id: '', name: '', year: String(new Date().getFullYear()), level: 'SMP' })
       loadSchools()
     } else {
       showToast(d.error, 'err')
@@ -193,6 +198,36 @@ export default function AdminPage() {
     if (!confirm(`Hapus sekolah "${id}"? Semua data siswa di sekolah ini juga akan terhapus.`)) return
     const res = await fetch(`/api/admin/schools/${id}`, { method: 'DELETE', headers: authHeaders })
     if (res.ok) { showToast('Sekolah dihapus'); loadSchools(); loadStudents() }
+  }
+
+  const startEditSchool = (sc: School) => {
+    setEditingSchool(sc)
+    setSchoolForm({ id: sc.id, name: sc.name, year: String(sc.year), level: sc.level })
+  }
+
+  const cancelEditSchool = () => {
+    setEditingSchool(null)
+    setSchoolForm({ id: '', name: '', year: String(new Date().getFullYear()), level: 'SMP' })
+  }
+
+  const updateSchool = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingSchool) return
+    setSchoolLoading(true)
+    const res = await fetch(`/api/admin/schools/${editingSchool.id}`, {
+      method: 'PUT',
+      headers: authHeaders,
+      body: JSON.stringify({ name: schoolForm.name, year: Number(schoolForm.year), level: schoolForm.level }),
+    })
+    const d = await res.json()
+    setSchoolLoading(false)
+    if (res.ok) {
+      showToast('Sekolah berhasil diperbarui')
+      cancelEditSchool()
+      loadSchools()
+    } else {
+      showToast(d.error, 'err')
+    }
   }
 
   // ── Student handlers ───────────────────────────────────────────────────────
@@ -236,6 +271,38 @@ export default function AdminPage() {
     if (res.ok) { showToast('Siswa dihapus'); loadStudents() }
   }
 
+  const startEditStudent = (s: Student) => {
+    setEditingStudent(s)
+    setEditStudentForm({
+      nim: s.nim,
+      name: s.name,
+      birthDate: s.birth_date,
+      schoolId: s.school_id,
+      isGraduated: Boolean(s.is_graduated),
+    })
+    setShowAddStudent(false)
+  }
+
+  const updateStudent = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingStudent) return
+    setStudentLoading(true)
+    const res = await fetch(`/api/admin/students/${editingStudent.id}`, {
+      method: 'PUT',
+      headers: authHeaders,
+      body: JSON.stringify(editStudentForm),
+    })
+    const d = await res.json()
+    setStudentLoading(false)
+    if (res.ok) {
+      showToast('Data siswa berhasil diperbarui')
+      setEditingStudent(null)
+      loadStudents()
+    } else {
+      showToast(d.error, 'err')
+    }
+  }
+
   // ── Excel template download (client-side generation) ────────────────────────
   const downloadTemplate = () => {
     const wb = xlsx.utils.book_new()
@@ -249,12 +316,12 @@ export default function AdminPage() {
     xlsx.utils.book_append_sheet(wb, ws1, 'Data Siswa')
 
     // Sheet 2: master school reference
-    const schoolRows = schools.map((s) => [s.id, s.name, s.year])
+    const schoolRows = schools.map((s) => [s.id, s.name, s.level, s.year])
     const ws2 = xlsx.utils.aoa_to_sheet([
-      ['ID Sekolah', 'Nama Sekolah', 'Tahun'],
+      ['ID Sekolah', 'Nama Sekolah', 'Jenjang', 'Tahun'],
       ...schoolRows,
     ])
-    ws2['!cols'] = [{ wch: 16 }, { wch: 40 }, { wch: 10 }]
+    ws2['!cols'] = [{ wch: 16 }, { wch: 40 }, { wch: 12 }, { wch: 10 }]
     xlsx.utils.book_append_sheet(wb, ws2, 'Master Sekolah')
 
     xlsx.writeFile(wb, 'template-import-siswa.xlsx')
@@ -360,11 +427,10 @@ export default function AdminPage() {
         <div className="flex gap-1 bg-white rounded-xl p-1 border border-gray-200 mb-6 w-fit">
           {(['students', 'schools'] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)}
-              className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
-                tab === t
-                  ? 'text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-800'
-              }`}
+              className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${tab === t
+                ? 'text-white shadow-sm'
+                : 'text-gray-500 hover:text-gray-800'
+                }`}
               style={tab === t ? { background: 'var(--accent)' } : {}}>
               {t === 'students' ? `Siswa (${students.length})` : `Sekolah (${schools.length})`}
             </button>
@@ -542,6 +608,76 @@ export default function AdminPage() {
               </div>
             )}
 
+            {/* Edit student form */}
+            {editingStudent && (
+              <div className="bg-white rounded-2xl border border-blue-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                  <h3 className="font-semibold text-gray-800">Edit Data Siswa</h3>
+                  <button onClick={() => setEditingStudent(null)} className="text-gray-400 hover:text-gray-600">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <form onSubmit={updateStudent} className="p-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">NIM</label>
+                      <input value={editStudentForm.nim} onChange={(e) => setEditStudentForm(f => ({ ...f, nim: e.target.value }))}
+                        required placeholder="2024001"
+                        className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Nama Lengkap</label>
+                      <input value={editStudentForm.name} onChange={(e) => setEditStudentForm(f => ({ ...f, name: e.target.value }))}
+                        required placeholder="John Doe"
+                        className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Tanggal Lahir</label>
+                      <input type="date" value={editStudentForm.birthDate} onChange={(e) => setEditStudentForm(f => ({ ...f, birthDate: e.target.value }))}
+                        required
+                        className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Sekolah</label>
+                      <div className="relative">
+                        <select value={editStudentForm.schoolId} onChange={(e) => setEditStudentForm(f => ({ ...f, schoolId: e.target.value }))}
+                          required
+                          className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 appearance-none pr-9 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                          <option value="">— Pilih —</option>
+                          {schools.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                        <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </div>
+                    <div className="sm:col-span-2 flex items-center gap-3">
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" className="sr-only peer"
+                          checked={editStudentForm.isGraduated}
+                          onChange={(e) => setEditStudentForm(f => ({ ...f, isGraduated: e.target.checked }))} />
+                        <div className="w-10 h-6 bg-gray-200 rounded-full peer peer-checked:bg-green-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-4" />
+                      </label>
+                      <span className="text-sm font-medium text-gray-700">Tandai sebagai Lulus</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-3 mt-5">
+                    <button type="submit" disabled={studentLoading}
+                      className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60 transition-all active:scale-[0.98]"
+                      style={{ background: 'var(--accent)' }}>
+                      {studentLoading ? 'Menyimpan…' : 'Update Siswa'}
+                    </button>
+                    <button type="button" onClick={() => setEditingStudent(null)}
+                      className="px-5 py-2.5 rounded-xl text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
+                      Batal
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
             {/* Students table */}
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
               {students.length === 0 ? (
@@ -574,11 +710,10 @@ export default function AdminPage() {
                           <td className="px-4 py-3.5 text-gray-600 whitespace-nowrap">{s.school_name}</td>
                           <td className="px-4 py-3.5">
                             <button onClick={() => toggleGraduation(s)}
-                              className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full transition-all cursor-pointer ${
-                                s.is_graduated
-                                  ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                                  : 'bg-red-100 text-red-700 hover:bg-red-200'
-                              }`}>
+                              className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full transition-all cursor-pointer ${s.is_graduated
+                                ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                : 'bg-red-100 text-red-700 hover:bg-red-200'
+                                }`}>
                               {s.is_graduated
                                 ? <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg> Lulus</>
                                 : <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg> Tidak Lulus</>
@@ -586,13 +721,24 @@ export default function AdminPage() {
                             </button>
                           </td>
                           <td className="px-4 py-3.5">
-                            <button onClick={() => deleteStudent(s)}
-                              className="text-gray-400 hover:text-red-600 transition-colors p-1.5 rounded-lg hover:bg-red-50">
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => startEditStudent(s)}
+                                className="text-gray-400 hover:text-blue-600 transition-colors p-1.5 rounded-lg hover:bg-blue-50"
+                                title="Edit siswa">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+                              <button onClick={() => deleteStudent(s)}
+                                className="text-gray-400 hover:text-red-600 transition-colors p-1.5 rounded-lg hover:bg-red-50"
+                                title="Hapus siswa">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -609,17 +755,24 @@ export default function AdminPage() {
           <div className="space-y-5">
             {/* Add school form */}
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-100">
-                <h3 className="font-semibold text-gray-800">Tambah Sekolah</h3>
+              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="font-semibold text-gray-800">{editingSchool ? 'Edit Sekolah' : 'Tambah Sekolah'}</h3>
+                {editingSchool && (
+                  <button type="button" onClick={cancelEditSchool} className="text-gray-400 hover:text-gray-600">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
               </div>
-              <form onSubmit={addSchool} className="p-6">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <form onSubmit={editingSchool ? updateSchool : addSchool} className="p-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">ID Sekolah</label>
                     <input value={schoolForm.id} onChange={(e) => setSchoolForm(f => ({ ...f, id: e.target.value }))}
-                      required placeholder="SMAN1JKT"
-                      className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 uppercase focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent" />
-                    <p className="text-xs text-gray-400 mt-1">Huruf kapital, tanpa spasi</p>
+                      required placeholder="SMAN1JKT" disabled={!!editingSchool}
+                      className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent uppercase ${editingSchool ? 'bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed' : 'bg-gray-50 border-gray-200'}`} />
+                    <p className="text-xs text-gray-400 mt-1">{editingSchool ? 'ID tidak dapat diubah' : 'Huruf kapital, tanpa spasi'}</p>
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Nama Sekolah</label>
@@ -628,20 +781,46 @@ export default function AdminPage() {
                       className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent" />
                   </div>
                   <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Jenjang</label>
+                    <div className="relative">
+                      <select value={schoolForm.level} onChange={(e) => setSchoolForm(f => ({ ...f, level: e.target.value }))}
+                        required
+                        className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 appearance-none pr-9 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                        <option value="TK">TK — Taman Kanak-Kanak</option>
+                        <option value="SD">SD — Sekolah Dasar</option>
+                        <option value="SMP">SMP — Sekolah Menengah Pertama</option>
+                        <option value="SMA/SMK">SMA/SMK — Sekolah Menengah Atas/Kejuruan</option>
+                      </select>
+                      <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+                  <div>
                     <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Tahun Kelulusan</label>
                     <input type="number" value={schoolForm.year} onChange={(e) => setSchoolForm(f => ({ ...f, year: e.target.value }))}
                       required min="2000" max="2100"
                       className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent" />
                   </div>
                 </div>
-                <button type="submit" disabled={schoolLoading}
-                  className="mt-4 flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60 transition-all active:scale-[0.98]"
-                  style={{ background: 'var(--accent)' }}>
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                  </svg>
-                  {schoolLoading ? 'Menyimpan…' : 'Tambah Sekolah'}
-                </button>
+                <div className="flex gap-3 mt-4">
+                  <button type="submit" disabled={schoolLoading}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60 transition-all active:scale-[0.98]"
+                    style={{ background: 'var(--accent)' }}>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      {editingSchool
+                        ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />}
+                    </svg>
+                    {schoolLoading ? 'Menyimpan…' : editingSchool ? 'Update Sekolah' : 'Tambah Sekolah'}
+                  </button>
+                  {editingSchool && (
+                    <button type="button" onClick={cancelEditSchool}
+                      className="px-5 py-2.5 rounded-xl text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
+                      Batal
+                    </button>
+                  )}
+                </div>
               </form>
             </div>
 
@@ -661,7 +840,7 @@ export default function AdminPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-gray-50 border-b border-gray-100">
-                        {['ID', 'Nama Sekolah', 'Tahun', 'Jumlah Siswa', 'Aksi'].map((h) => (
+                        {['ID', 'Nama Sekolah', 'Jenjang', 'Tahun', 'Jumlah Siswa', 'Aksi'].map((h) => (
                           <th key={h} className="text-left px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
                             {h}
                           </th>
@@ -677,6 +856,13 @@ export default function AdminPage() {
                               <span className="font-mono text-xs bg-purple-50 text-purple-700 px-2 py-1 rounded-md">{sc.id}</span>
                             </td>
                             <td className="px-4 py-3.5 font-medium text-gray-900">{sc.name}</td>
+                            <td className="px-4 py-3.5">
+                              <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${sc.level === 'TK' ? 'bg-pink-100 text-pink-700' :
+                                  sc.level === 'SD' ? 'bg-yellow-100 text-yellow-700' :
+                                    sc.level === 'SMP' ? 'bg-blue-100 text-blue-700' :
+                                      'bg-purple-100 text-purple-700'
+                                }`}>{sc.level}</span>
+                            </td>
                             <td className="px-4 py-3.5 text-gray-600">{sc.year}</td>
                             <td className="px-4 py-3.5">
                               <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full font-medium">
@@ -684,13 +870,24 @@ export default function AdminPage() {
                               </span>
                             </td>
                             <td className="px-4 py-3.5">
-                              <button onClick={() => deleteSchool(sc.id)}
-                                className="text-gray-400 hover:text-red-600 transition-colors p-1.5 rounded-lg hover:bg-red-50">
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button onClick={() => startEditSchool(sc)}
+                                  className="text-gray-400 hover:text-blue-600 transition-colors p-1.5 rounded-lg hover:bg-blue-50"
+                                  title="Edit sekolah">
+                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                </button>
+                                <button onClick={() => deleteSchool(sc.id)}
+                                  className="text-gray-400 hover:text-red-600 transition-colors p-1.5 rounded-lg hover:bg-red-50"
+                                  title="Hapus sekolah">
+                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         )

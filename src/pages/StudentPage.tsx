@@ -7,7 +7,15 @@ interface Student {
   birth_date: string
   school_name: string
   school_year: number
+  school_level: string
   is_graduated: number
+}
+
+const LEVEL_LABEL: Record<string, string> = {
+  TK: 'Taman Kanak-Kanak (TK)',
+  SD: 'Sekolah Dasar (SD)',
+  SMP: 'Sekolah Menengah Pertama (SMP)',
+  'SMA/SMK': 'Sekolah Menengah Atas/Kejuruan (SMA/SMK)',
 }
 
 export default function StudentPage() {
@@ -154,11 +162,25 @@ export default function StudentPage() {
                   Status Kelulusan
                 </p>
                 <h2
-                  className={`text-3xl font-extrabold mb-5 ${result.is_graduated ? 'text-green-600' : 'text-red-600'
+                  className={`text-3xl font-extrabold mb-3 ${result.is_graduated ? 'text-green-600' : 'text-red-600'
                     }`}
                 >
                   {result.is_graduated ? 'LULUS' : 'TIDAK LULUS'}
                 </h2>
+
+                {/* Congratulatory / condolence message */}
+                <div className={`rounded-xl px-4 py-3 mb-5 text-sm leading-relaxed ${result.is_graduated
+                    ? 'bg-green-50 border border-green-100 text-green-800'
+                    : 'bg-red-50 border border-red-100 text-red-800'
+                  }`}>
+                  {result.is_graduated
+                    ? <>Selamat, Anda dinyatakan <strong>LULUS</strong> dari jenjang{' '}
+                      <strong>{LEVEL_LABEL[result.school_level] ?? result.school_level}</strong> sesuai
+                      dengan mekanisme dan kriteria yang berlaku.</>
+                    : <>Mohon maaf, Anda dinyatakan <strong>TIDAK LULUS</strong> berdasarkan data
+                      yang tersedia. Silakan hubungi pihak sekolah untuk informasi lebih lanjut.</>
+                  }
+                </div>
 
                 <div className="bg-gray-50 rounded-2xl p-5 text-left space-y-3 border border-gray-100">
                   {[

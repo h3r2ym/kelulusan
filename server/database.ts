@@ -10,9 +10,10 @@ db.pragma('foreign_keys = ON')
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS schools (
-    id   TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    year INTEGER NOT NULL,
+    id    TEXT PRIMARY KEY,
+    name  TEXT NOT NULL,
+    year  INTEGER NOT NULL,
+    level TEXT NOT NULL DEFAULT 'SMP',
     created_at TEXT DEFAULT (datetime('now', 'localtime'))
   );
 
@@ -27,5 +28,11 @@ db.exec(`
     UNIQUE(nim, school_id)
   );
 `)
+
+// Migrate: add level column if it doesn't exist yet
+const cols = db.pragma('table_info(schools)') as { name: string }[]
+if (!cols.find((c) => c.name === 'level')) {
+  db.exec("ALTER TABLE schools ADD COLUMN level TEXT NOT NULL DEFAULT 'SMP'")
+}
 
 export default db
