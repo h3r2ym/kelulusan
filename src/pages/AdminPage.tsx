@@ -90,6 +90,27 @@ function LoginScreen({ onLogin }: { onLogin: (pw: string) => Promise<string | nu
   )
 }
 
+// ── Date helpers ─────────────────────────────────────────────────────────────
+/** YYYY-MM-DD → dd-mm-yyyy */
+function fromIsoDate(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) return iso
+  return `${m[3]}-${m[2]}-${m[1]}`
+}
+/** dd-mm-yyyy → YYYY-MM-DD; returns null jika format salah */
+function toIsoDate(dmy: string): string | null {
+  const m = dmy.match(/^(\d{2})-(\d{2})-(\d{4})$/)
+  if (!m) return null
+  return `${m[3]}-${m[2]}-${m[1]}`
+}
+/** Auto-format saat user mengetik (hanya angka, sisipkan '-') */
+function autoFormatDate(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 8)
+  if (digits.length > 4) return `${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4)}`
+  if (digits.length > 2) return `${digits.slice(0, 2)}-${digits.slice(2)}`
+  return digits
+}
+
 // ── Main admin dashboard ──────────────────────────────────────────────────────
 export default function AdminPage() {
   const [token, setToken] = useState(() => sessionStorage.getItem('admin_token') ?? '')
@@ -233,11 +254,13 @@ export default function AdminPage() {
   // ── Student handlers ───────────────────────────────────────────────────────
   const addStudent = async (e: React.FormEvent) => {
     e.preventDefault()
+    const isoDate = toIsoDate(studentForm.birthDate)
+    if (!isoDate) { showToast('Format tanggal lahir harus dd-mm-yyyy', 'err'); return }
     setStudentLoading(true)
     const res = await fetch('/api/admin/students', {
       method: 'POST',
       headers: authHeaders,
-      body: JSON.stringify(studentForm),
+      body: JSON.stringify({ ...studentForm, birthDate: isoDate }),
     })
     const d = await res.json()
     setStudentLoading(false)
@@ -276,7 +299,7 @@ export default function AdminPage() {
     setEditStudentForm({
       nim: s.nim,
       name: s.name,
-      birthDate: s.birth_date,
+      birthDate: fromIsoDate(s.birth_date),  // tampilkan dd-mm-yyyy di form edit
       schoolId: s.school_id,
       isGraduated: Boolean(s.is_graduated),
     })
@@ -286,11 +309,13 @@ export default function AdminPage() {
   const updateStudent = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingStudent) return
+    const isoDate = toIsoDate(editStudentForm.birthDate)
+    if (!isoDate) { showToast('Format tanggal lahir harus dd-mm-yyyy', 'err'); return }
     setStudentLoading(true)
     const res = await fetch(`/api/admin/students/${editingStudent.id}`, {
       method: 'PUT',
       headers: authHeaders,
-      body: JSON.stringify(editStudentForm),
+      body: JSON.stringify({ ...editStudentForm, birthDate: isoDate }),
     })
     const d = await res.json()
     setStudentLoading(false)
@@ -565,8 +590,9 @@ export default function AdminPage() {
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Tanggal Lahir</label>
-                      <input type="date" value={studentForm.birthDate} onChange={(e) => setStudentForm(f => ({ ...f, birthDate: e.target.value }))}
-                        required
+                      <input type="text" value={studentForm.birthDate}
+                        onChange={(e) => setStudentForm(f => ({ ...f, birthDate: autoFormatDate(e.target.value) }))}
+                        required placeholder="dd-mm-yyyy" maxLength={10}
                         className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent" />
                     </div>
                     <div>
@@ -635,8 +661,9 @@ export default function AdminPage() {
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Tanggal Lahir</label>
-                      <input type="date" value={editStudentForm.birthDate} onChange={(e) => setEditStudentForm(f => ({ ...f, birthDate: e.target.value }))}
-                        required
+                      <input type="text" value={editStudentForm.birthDate}
+                        onChange={(e) => setEditStudentForm(f => ({ ...f, birthDate: autoFormatDate(e.target.value) }))}
+                        required placeholder="dd-mm-yyyy" maxLength={10}
                         className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent" />
                     </div>
                     <div>
@@ -706,7 +733,7 @@ export default function AdminPage() {
                         <tr key={s.id} className="hover:bg-gray-50 transition-colors">
                           <td className="px-4 py-3.5 font-mono text-gray-700 text-xs">{s.nim}</td>
                           <td className="px-4 py-3.5 font-medium text-gray-900 whitespace-nowrap">{s.name}</td>
-                          <td className="px-4 py-3.5 text-gray-500 whitespace-nowrap">{s.birth_date}</td>
+                          <td className="px-4 py-3.5 text-gray-500 whitespace-nowrap">{fromIsoDate(s.birth_date)}</td>
                           <td className="px-4 py-3.5 text-gray-600 whitespace-nowrap">{s.school_name}</td>
                           <td className="px-4 py-3.5">
                             <button onClick={() => toggleGraduation(s)}

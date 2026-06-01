@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 
 interface Student {
   id: number
@@ -18,16 +18,92 @@ const LEVEL_LABEL: Record<string, string> = {
   'SMA/SMK': 'Sekolah Menengah Atas/Kejuruan (SMA/SMK)',
 }
 
+// ── CAPTCHA helpers ───────────────────────────────────────────────────────────
+type CaptchaOp = '+' | '-' | '×'
+interface Captcha { a: number; b: number; op: CaptchaOp; answer: number }
+
+function generateCaptcha(): Captcha {
+  const ops: CaptchaOp[] = ['+', '-', '×']
+  const op = ops[Math.floor(Math.random() * ops.length)]
+  let a: number, b: number, answer: number
+  switch (op) {
+    case '+':
+      a = Math.floor(Math.random() * 20) + 1
+      b = Math.floor(Math.random() * 20) + 1
+      answer = a + b
+      break
+    case '-':
+      a = Math.floor(Math.random() * 15) + 6
+      b = Math.floor(Math.random() * (a - 1)) + 1
+      answer = a - b
+      break
+    case '×':
+      a = Math.floor(Math.random() * 9) + 2
+      b = Math.floor(Math.random() * 9) + 2
+      answer = a * b
+      break
+  }
+  return { a, b, op, answer }
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
 export default function StudentPage() {
   const [nim, setNim] = useState('')
-  const [birthDate, setBirthDate] = useState('')
+  const [birthDate, setBirthDate] = useState('')   // format dd-mm-yyyy
+  const [birthDateError, setBirthDateError] = useState('')
+
+  // CAPTCHA state
+  const [captcha, setCaptcha] = useState<Captcha>(generateCaptcha)
+  const [captchaInput, setCaptchaInput] = useState('')
+  const [captchaError, setCaptchaError] = useState('')
+
   const [result, setResult] = useState<Student | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [phase, setPhase] = useState<'form' | 'result' | 'error'>('form')
 
+  // Konversi dd-mm-yyyy → YYYY-MM-DD
+  const toIsoDate = (dmy: string): string | null => {
+    const m = dmy.match(/^(\d{2})-(\d{2})-(\d{4})$/)
+    if (!m) return null
+    return `${m[3]}-${m[2]}-${m[1]}`
+  }
+
+  // Auto-format input tanggal: sisipkan '-' otomatis
+  const handleBirthDateChange = (raw: string) => {
+    const digits = raw.replace(/\D/g, '').slice(0, 8)
+    let formatted = digits
+    if (digits.length > 4) formatted = `${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4)}`
+    else if (digits.length > 2) formatted = `${digits.slice(0, 2)}-${digits.slice(2)}`
+    setBirthDate(formatted)
+    setBirthDateError('')
+  }
+
+  const refreshCaptcha = useCallback(() => {
+    setCaptcha(generateCaptcha())
+    setCaptchaInput('')
+    // captchaError sengaja TIDAK di-reset di sini;
+    // akan hilang sendiri saat user mulai mengetik (onChange)
+  }, [])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Validasi tanggal
+    const isoDate = toIsoDate(birthDate)
+    if (!isoDate) {
+      setBirthDateError('Format tanggal harus dd-mm-yyyy (contoh: 15-01-2006)')
+      return
+    }
+
+    // Validasi CAPTCHA
+    const userAnswer = parseInt(captchaInput.trim(), 10)
+    if (isNaN(userAnswer) || userAnswer !== captcha.answer) {
+      refreshCaptcha()                                    // ganti soal, kosongkan input
+      setCaptchaError('Jawaban salah, selesaikan soal baru di bawah.')  // set error SETELAH refresh
+      return
+    }
+
     setLoading(true)
     setError('')
     setResult(null)
@@ -35,7 +111,7 @@ export default function StudentPage() {
       const res = await fetch('/api/lookup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nim, birthDate }),
+        body: JSON.stringify({ nim, birthDate: isoDate }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -50,6 +126,7 @@ export default function StudentPage() {
       setPhase('error')
     } finally {
       setLoading(false)
+      refreshCaptcha()
     }
   }
 
@@ -59,6 +136,8 @@ export default function StudentPage() {
     setError('')
     setNim('')
     setBirthDate('')
+    setBirthDateError('')
+    refreshCaptcha()
   }
 
   return (
@@ -112,12 +191,66 @@ export default function StudentPage() {
                     Tanggal Lahir
                   </label>
                   <input
-                    type="date"
+                    type="text"
                     value={birthDate}
-                    onChange={(e) => setBirthDate(e.target.value)}
+                    onChange={(e) => handleBirthDateChange(e.target.value)}
                     required
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-900 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    placeholder="dd-mm-yyyy"
+                    maxLength={10}
+                    className={`w-full border rounded-xl px-4 py-3 text-gray-900 placeholder-gray-300 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                      birthDateError ? 'border-red-400' : 'border-gray-200'
+                    }`}
                   />
+                  {birthDateError && (
+                    <p className="text-red-500 text-xs mt-1.5">{birthDateError}</p>
+                  )}
+                </div>
+
+                {/* CAPTCHA */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    Verifikasi — Bukan Robot
+                  </label>
+                  <div className="flex items-center gap-3">
+                    {/* Soal CAPTCHA */}
+                    <div className="flex items-center gap-2 flex-1 bg-purple-50 border border-purple-100 rounded-xl px-4 py-3 select-none">
+                      <svg className="w-4 h-4 text-purple-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                      </svg>
+                      <span className="font-mono font-bold text-purple-700 text-base tracking-wide">
+                        {captcha.a} {captcha.op} {captcha.b} = ?
+                      </span>
+                    </div>
+
+                    {/* Input jawaban */}
+                    <input
+                      type="number"
+                      value={captchaInput}
+                      onChange={(e) => { setCaptchaInput(e.target.value); setCaptchaError('') }}
+                      required
+                      placeholder="Jawab"
+                      className={`w-24 border rounded-xl px-3 py-3 text-center text-gray-900 font-semibold bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                        captchaError ? 'border-red-400' : 'border-gray-200'
+                      }`}
+                    />
+
+                    {/* Refresh soal */}
+                    <button
+                      type="button"
+                      onClick={refreshCaptcha}
+                      title="Ganti soal"
+                      className="p-2.5 rounded-xl text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-colors"
+                    >
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    </button>
+                  </div>
+                  {captchaError && (
+                    <p className="text-red-500 text-xs mt-1.5">{captchaError}</p>
+                  )}
                 </div>
 
                 <button
