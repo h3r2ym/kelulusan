@@ -65,7 +65,7 @@ app.post('/api/lookup', async (req, res): Promise<void> => {
 })
 
 // ── Admin: verify password ───────────────────────────────────────────────────
-app.post('/api/admin/verify', (req, res): void => {
+app.post('/api/admin/verify', async (req, res): Promise<void> => {
   const { password } = req.body as { password: string }
   if (password === ADMIN_PASSWORD) {
     res.json({ success: true })

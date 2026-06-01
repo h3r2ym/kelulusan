@@ -7,5 +7,6 @@ const ready = initDB()
 
 export default async function handler(req: object, res: object) {
   await ready
-  return (app as (req: object, res: object) => void)(req, res)
+  // Call Express app directly; it handles req/res and sends response
+  app(req as any, res as any)
 }
